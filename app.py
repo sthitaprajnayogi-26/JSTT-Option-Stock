@@ -605,7 +605,7 @@ def display_option_chain(df, access_token):
     # Define display columns including new JSTT_Trigger2 and %C
     # Define display columns in your exact requested order
     display_cols = [
-        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT_Trigger2', '%C', 
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT Trigger2', '%C', 
         'Tradingview Scrip', 'Trade Point Scrip'
     ]
     
