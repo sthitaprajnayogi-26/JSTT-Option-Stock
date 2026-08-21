@@ -22,7 +22,7 @@ def get_ist_now():
 
 # Set page configuration
 st.set_page_config(
-    page_title="Option Filter",
+    page_title="JSTT Option Scanner",
     page_icon="📈",
     layout="wide"
 )
@@ -531,11 +531,11 @@ def display_option_chain(df, access_token):
         if high_cache:
             df['Trigger'] = df['instrument_key'].map(high_cache).fillna(df['Trigger'])
             
-    # JSTT_Trigger2 (Last week close) extraction
+    # JSTT-C (Last week close) extraction
     if 'ClsPric' in df.columns:
-        df['JSTT_Trigger2'] = df['ClsPric']
+        df['JSTT-C'] = df['ClsPric']
     else:
-        df['JSTT_Trigger2'] = 0.0
+        df['JSTT-C'] = 0.0
 
     def calculate_numeric_change(row):
         try:
@@ -550,7 +550,7 @@ def display_option_chain(df, access_token):
     # Calculate %C for Last week close difference
     def calculate_c_percent(row):
         try:
-            close_val = float(row.get('JSTT_Trigger2', 0.0))
+            close_val = float(row.get('JSTT-C', 0.0))
             ltp = float(row.get('ltp', 0.0))
             if close_val > 0 and ltp > 0:
                 return round((ltp / close_val) * 100, 2)
@@ -564,7 +564,7 @@ def display_option_chain(df, access_token):
     df['%C_val'] = df.apply(calculate_c_percent, axis=1)
     df['%C'] = df['%C_val']
 
-    trigger_col_name = 'JSTT Trigger1'
+    trigger_col_name = 'JSTT-H'
     df = df.rename(columns={'Trigger': trigger_col_name})
 
     # Filter Controls
@@ -602,16 +602,16 @@ def display_option_chain(df, access_token):
     calls_df = calls_df.sort_values(by='%H', ascending=False)
     puts_df = puts_df.sort_values(by='%H', ascending=False)
 
-    # Define display columns including new JSTT_Trigger2 and %C
+    # Define display columns including new JSTT-C and %C
     # Define display columns in your exact requested order
     display_cols = [
-        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT Trigger2', '%C', 
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-C', '%C', 
         'Tradingview Scrip', 'Trade Point Scrip'
     ]
     
     # Hide both scrip columns by default in UI (but keep the new order for the rest)
     default_visible_cols = [
-        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT Trigger2', '%C'
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-C', '%C', 'Tradingview Scrip', 'Trade Point Scrip'
     ]
     
     def color_change(val):
@@ -626,7 +626,7 @@ def display_option_chain(df, access_token):
         '%H': '{:.2f}%',
         '%C': '{:.2f}%',
         trigger_col_name: '{:.2f}',
-        'JSTT_Trigger2': '{:.2f}',
+        'JSTT-C': '{:.2f}',
         'ltp': '{:.2f}',
         'StrikePrice': '{:.2f}'
     }
@@ -666,12 +666,12 @@ if logo_base64:
     <div style="display: flex; align-items: center; gap: 16px; margin-top: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap;">
         <img src="data:image/png;base64,{logo_base64}" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; vertical-align: middle; flex-shrink: 0;" />
         <h1 style="margin: 0; padding: 0; color: #1e3a8a; font-size: 1.9rem; font-weight: 700; line-height: 1.3; display: inline-block;">
-            Option Filter
+            JSTT Option Scanner
         </h1>
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.title("Option Filter")
+    st.title("JSTT Option Scanner")
 
 # Secret Handling (Client View Mode)
 is_client_view = "UPSTOX_ACCESS_TOKEN" in st.secrets
@@ -783,3 +783,4 @@ if not nse_json_df.empty:
         st.warning("JSTT Bhavcopy file not found. Please upload 'JSTT Bhavcopy' (CSV/ZIP) in the sidebar.")
 else:
     st.error("Critical Error: NSE.json could not be loaded.")
+F
