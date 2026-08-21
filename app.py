@@ -69,10 +69,10 @@ if not os.path.exists(DATA_DIR):
 TOKEN_FILE = os.path.join(DATA_DIR, 'token.json')
 META_FILE = os.path.join(DATA_DIR, 'meta.json')
 LTP_CACHE_FILE = os.path.join(DATA_DIR, 'ltp_cache.json')
-JSTT_Trigger_CACHE_FILE = os.path.join(DATA_DIR, 'JSTT_Trigger_cache.json')
+JSTT_H_CACHE_FILE = os.path.join(DATA_DIR, 'JSTT_H_cache.json')
 
 FILES = {
-    'JSTT_Trigger': os.path.join(DATA_DIR, 'JSTT_Trigger.csv'),
+    'JSTT_H': os.path.join(DATA_DIR, 'JSTT_H.csv'),
     'Strike_Selection': os.path.join(DATA_DIR, 'strike_selection.csv')
 }
 
@@ -127,10 +127,10 @@ def save_ltp_cache(new_data):
     except:
         pass
 
-def load_JSTT_Trigger_cache():
-    if os.path.exists(JSTT_Trigger_CACHE_FILE):
+def load_JSTT_H_cache():
+    if os.path.exists(JSTT_H_CACHE_FILE):
         try:
-            with open(JSTT_Trigger_CACHE_FILE, 'r') as f:
+            with open(JSTT_H_CACHE_FILE, 'r') as f:
                 data = json.load(f)
                 today_str = get_ist_now().strftime('%Y-%m-%d')
                 if data.get('date') == today_str:
@@ -139,16 +139,16 @@ def load_JSTT_Trigger_cache():
             pass
     return {}
 
-def save_JSTT_Trigger_cache(new_highs):
+def save_JSTT_H_cache(new_highs):
     try:
-        cache = load_JSTT_Trigger_cache()
+        cache = load_JSTT_H_cache()
         cache.update(new_highs)
         today_str = get_ist_now().strftime('%Y-%m-%d')
         save_data = {
             'date': today_str,
             'highs': cache
         }
-        with open(JSTT_Trigger_CACHE_FILE, 'w') as f:
+        with open(JSTT_H_CACHE_FILE, 'w') as f:
             json.dump(save_data, f)
     except:
         pass
@@ -433,7 +433,6 @@ def process_bhavcopy(bhav_file, df_json, target_expiry_index=0, strike_bhav_file
             'LastPric': 'LastPrice'
         })
 
-        # --- MODIFICATION START: Build Tradingview Scrip and Trade Point Scrip ---
         # Shared strike formatting: remove trailing '.0' (e.g. 415.0 -> 415) while keeping decimals (e.g. 172.5)
         strike_str = final_df['StrikePrice'].astype(str).str.replace(r'\.0$', '', regex=True)
 
@@ -450,7 +449,6 @@ def process_bhavcopy(bhav_file, df_json, target_expiry_index=0, strike_bhav_file
             final_df['OptionType'] + " " + 
             strike_str
         )
-        # --- MODIFICATION END ---
 
         return final_df, target_expiry, available_expiries
 
@@ -496,7 +494,7 @@ def fetch_ltp(instrument_keys, access_token):
 def display_option_chain(df, access_token):
     st.caption(f"Last Updated: {get_ist_now().strftime('%H:%M:%S')} IST")
     if df.empty:
-        st.info("No data to display. Please upload JSTT Trigger Bhavcopy files in the sidebar.")
+        st.info("No data to display. Please upload JSTT Bhavcopy files in the sidebar.")
         return
 
     if access_token:
@@ -524,14 +522,20 @@ def display_option_chain(df, access_token):
 
     df['ltp'] = df.apply(clean_ltp, axis=1)
 
-    # JSTT Trigger trigger: Priority given to 5-day MAX high calculated from uploaded Bhavcopies
+    # JSTT: Priority given to 5-day MAX high calculated from uploaded Bhavcopies
     if 'HighPrice' in df.columns and (df['HighPrice'] > 0).any():
         df['Trigger'] = df['HighPrice']
     else:
         df['Trigger'] = 0.0
-        high_cache = load_JSTT_Trigger_cache()
+        high_cache = load_JSTT_H_cache()
         if high_cache:
             df['Trigger'] = df['instrument_key'].map(high_cache).fillna(df['Trigger'])
+            
+    # JSTT-C (Last week close) extraction
+    if 'ClsPric' in df.columns:
+        df['JSTT-C'] = df['ClsPric']
+    else:
+        df['JSTT-C'] = 0.0
 
     def calculate_numeric_change(row):
         try:
@@ -543,10 +547,24 @@ def display_option_chain(df, access_token):
             pass
         return 0.0
 
-    df['change_val'] = df.apply(calculate_numeric_change, axis=1)
-    df['change %'] = df['change_val']
+    # Calculate %C for Last week close difference
+    def calculate_c_percent(row):
+        try:
+            close_val = float(row.get('JSTT-C', 0.0))
+            ltp = float(row.get('ltp', 0.0))
+            if close_val > 0 and ltp > 0:
+                return round((ltp / close_val) * 100, 2)
+        except Exception:
+            pass
+        return 0.0
 
-    trigger_col_name = 'JSTT Trigger'
+    df['change_val'] = df.apply(calculate_numeric_change, axis=1)
+    df['%H'] = df['change_val']
+    
+    df['%C_val'] = df.apply(calculate_c_percent, axis=1)
+    df['%C'] = df['%C_val']
+
+    trigger_col_name = 'JSTT-H'
     df = df.rename(columns={'Trigger': trigger_col_name})
 
     # Filter Controls
@@ -568,9 +586,9 @@ def display_option_chain(df, access_token):
 
     # Apply Filter View
     if filter_view == "🔥 Breakout Only (> 100%)":
-        df = df[df['change %'] > 100]
+        df = df[df['%H'] > 100]
     elif filter_view == "📉 Below High Only (<= 100%)":
-        df = df[df['change %'] <= 100]
+        df = df[df['%H'] <= 100]
 
     # Apply Strike Price Filter
     if strike_filter == "🎯 1000 & Above (>= 1000)":
@@ -581,18 +599,20 @@ def display_option_chain(df, access_token):
     calls_df = df[df['OptionType'] == 'CE'].copy()
     puts_df = df[df['OptionType'] == 'PE'].copy()
 
-    calls_df = calls_df.sort_values(by='change %', ascending=False)
-    puts_df = puts_df.sort_values(by='change %', ascending=False)
+    calls_df = calls_df.sort_values(by='%H', ascending=False)
+    puts_df = puts_df.sort_values(by='%H', ascending=False)
 
-    # --- MODIFICATION START: Define display columns and default visible columns ---
+    # Define display columns including new JSTT-C and %C
+    # Define display columns in your exact requested order
     display_cols = [
-        'Symbol', 'StrikePrice', trigger_col_name, 'ltp', 'change %', 
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-Trigger1', '%C', 
         'Tradingview Scrip', 'Trade Point Scrip'
     ]
     
-    # Hide both scrip columns by default in UI
-    default_visible_cols = ['Symbol', 'StrikePrice', trigger_col_name, 'ltp', 'change %']
-    # --- MODIFICATION END ---
+    # Hide both scrip columns by default in UI (but keep the new order for the rest)
+    default_visible_cols = [
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-Trigger1', '%C'
+    ]
     
     def color_change(val):
         if isinstance(val, (int, float)):
@@ -603,8 +623,10 @@ def display_option_chain(df, access_token):
         return ''
 
     format_dict = {
-        'change %': '{:.2f}%',
+        '%H': '{:.2f}%',
+        '%C': '{:.2f}%',
         trigger_col_name: '{:.2f}',
+        'JSTT-C': '{:.2f}',
         'ltp': '{:.2f}',
         'StrikePrice': '{:.2f}'
     }
@@ -614,7 +636,7 @@ def display_option_chain(df, access_token):
         st.subheader(f"Calls (CE) ({len(calls_df)})")
         st.dataframe(
             calls_df[display_cols].style
-            .map(color_change, subset=['change %'])
+            .map(color_change, subset=['%H', '%C'])
             .format(format_dict)
             .set_properties(**{'font-weight': '600', 'text-align': 'center', 'font-size': '16px'}),
             hide_index=True,
@@ -627,7 +649,7 @@ def display_option_chain(df, access_token):
         st.subheader(f"Puts (PE) ({len(puts_df)})")
         st.dataframe(
             puts_df[display_cols].style
-            .map(color_change, subset=['change %'])
+            .map(color_change, subset=['%H', '%C'])
             .format(format_dict)
             .set_properties(**{'font-weight': '600', 'text-align': 'center', 'font-size': '16px'}),
             hide_index=True,
@@ -723,20 +745,20 @@ else:
         if 'Strike_Selection' in meta and os.path.exists(FILES['Strike_Selection']):
             st.caption(f"📅 Data Date: {meta['Strike_Selection']}")
 
-        # JSTT Trigger Uploader
-        st.subheader("2. JSTT Trigger Bhavcopy")
-        uploaded_wh = st.file_uploader("Upload JSTT Trigger Bhavcopy (Multiple CSVs or ZIP)", type=['csv', 'zip'], accept_multiple_files=True, key='wh_sel')
+        # JSTT Uploader
+        st.subheader("2. JSTT Bhavcopy")
+        uploaded_wh = st.file_uploader("Upload JSTT Bhavcopy (Multiple CSVs or ZIP)", type=['csv', 'zip'], accept_multiple_files=True, key='wh_sel')
         if uploaded_wh:
             csv_content, csv_name = process_uploaded_files(uploaded_wh)
             if csv_content:
-                with open(FILES['JSTT_Trigger'], 'wb') as f:
+                with open(FILES['JSTT_H'], 'wb') as f:
                     f.write(csv_content)
                 if csv_name:
-                    save_meta('JSTT_Trigger', csv_name)
-                st.success(f"JSTT Trigger file updated from {csv_name}!")
+                    save_meta('JSTT_H', csv_name)
+                st.success(f"JSTT file updated from {csv_name}!")
 
-        if 'JSTT_Trigger' in meta and os.path.exists(FILES['JSTT_Trigger']):
-            st.caption(f"📅 Data Date: {meta['JSTT_Trigger']}")
+        if 'JSTT_H' in meta and os.path.exists(FILES['JSTT_H']):
+            st.caption(f"📅 Data Date: {meta['JSTT_H']}")
 
         st.markdown("---")
         st.header("Auto Refresh")
@@ -749,15 +771,15 @@ if not nse_json_df.empty:
     run_every = refresh_interval if auto_refresh else None
     strike_file = FILES.get('Strike_Selection') if os.path.exists(FILES.get('Strike_Selection', '')) else None
 
-    if os.path.exists(FILES['JSTT_Trigger']):
+    if os.path.exists(FILES['JSTT_H']):
         @st.fragment(run_every=run_every)
-        def show_JSTT_Trigger():
-            df_wh, target_exp, all_exps = process_bhavcopy(FILES['JSTT_Trigger'], nse_json_df, target_expiry_index=target_expiry_idx, strike_bhav_file=strike_file)
+        def show_JSTT_H():
+            df_wh, target_exp, all_exps = process_bhavcopy(FILES['JSTT_H'], nse_json_df, target_expiry_index=target_expiry_idx, strike_bhav_file=strike_file)
             if target_exp:
                 st.info(f"📅 Displaying Expiry: **{target_exp.strftime('%d-%b-%Y')}**")
             display_option_chain(df_wh, access_token)
-        show_JSTT_Trigger()
+        show_JSTT_H()
     else:
-        st.warning("JSTT Trigger Bhavcopy file not found. Please upload 'JSTT Trigger Bhavcopy' (CSV/ZIP) in the sidebar.")
+        st.warning("JSTT Bhavcopy file not found. Please upload 'JSTT Bhavcopy' (CSV/ZIP) in the sidebar.")
 else:
     st.error("Critical Error: NSE.json could not be loaded.")
