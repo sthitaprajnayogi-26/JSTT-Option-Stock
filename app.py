@@ -531,11 +531,11 @@ def display_option_chain(df, access_token):
         if high_cache:
             df['Trigger'] = df['instrument_key'].map(high_cache).fillna(df['Trigger'])
             
-    # JSTT-C (Last week close) extraction
+    # JSTT_Trigger1 (Last week close) extraction
     if 'ClsPric' in df.columns:
-        df['JSTT-C'] = df['ClsPric']
+        df['JSTT_Trigger1'] = df['ClsPric']
     else:
-        df['JSTT-C'] = 0.0
+        df['JSTT_Trigger1'] = 0.0
 
     def calculate_numeric_change(row):
         try:
@@ -550,7 +550,7 @@ def display_option_chain(df, access_token):
     # Calculate %C for Last week close difference
     def calculate_c_percent(row):
         try:
-            close_val = float(row.get('JSTT-C', 0.0))
+            close_val = float(row.get('JSTT_Trigger1', 0.0))
             ltp = float(row.get('ltp', 0.0))
             if close_val > 0 and ltp > 0:
                 return round((ltp / close_val) * 100, 2)
@@ -602,16 +602,16 @@ def display_option_chain(df, access_token):
     calls_df = calls_df.sort_values(by='%H', ascending=False)
     puts_df = puts_df.sort_values(by='%H', ascending=False)
 
-    # Define display columns including new JSTT-C and %C
+    # Define display columns including new JSTT_Trigger1 and %C
     # Define display columns in your exact requested order
     display_cols = [
-        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-Trigger1', '%C', 
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT Trigger1', '%C', 
         'Tradingview Scrip', 'Trade Point Scrip'
     ]
     
     # Hide both scrip columns by default in UI (but keep the new order for the rest)
     default_visible_cols = [
-        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT-Trigger1', '%C'
+        'Symbol', 'StrikePrice', 'ltp', trigger_col_name, '%H', 'JSTT Trigger1', '%C'
     ]
     
     def color_change(val):
@@ -626,7 +626,7 @@ def display_option_chain(df, access_token):
         '%H': '{:.2f}%',
         '%C': '{:.2f}%',
         trigger_col_name: '{:.2f}',
-        'JSTT-C': '{:.2f}',
+        'JSTT_Trigger1': '{:.2f}',
         'ltp': '{:.2f}',
         'StrikePrice': '{:.2f}'
     }
